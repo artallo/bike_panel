@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ESP32 BLE Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --ok: #22c55e;
+      --bad: #ef4444;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #1e293b, var(--bg));
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 4vw, 42px);
+      letter-spacing: -0.04em;
+    }
+
+    code { color: #bae6fd; }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--bad);
+      box-shadow: 0 0 18px var(--bad);
+    }
+
+    .dot.ok {
+      background: var(--ok);
+      box-shadow: 0 0 18px var(--ok);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-size: 16px;
+      font-weight: 800;
+      color: #06121f;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 12px 30px rgba(56,189,248,.25);
+    }
+
+    button.secondary {
+      background: #334155;
+      color: var(--text);
+      box-shadow: none;
+    }
+
+    button.danger {
+      background: var(--bad);
+      color: white;
+    }
+
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    @media (max-width: 1050px) {
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 650px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: rgba(17, 24, 39, .82);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 28px;
+      padding: 22px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.22);
+      overflow: hidden;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 15px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 10px;
+    }
+
+    .value {
+      font-size: clamp(42px, 7vw, 76px);
+      line-height: .95;
+      font-weight: 900;
+      letter-spacing: -0.06em;
+      margin-bottom: 10px;
+    }
+
+    .unit {
+      color: var(--muted);
+      font-size: 20px;
+      font-weight: 800;
+      margin-left: 6px;
+    }
+
+    .bar {
+      height: 16px;
+      border-radius: 999px;
+      background: #0b1220;
+      overflow: hidden;
+      margin-top: 18px;
+    }
+
+    .fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--ok));
+      transition: width .12s linear;
+    }
+
+    .meta {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    @media (max-width: 800px) {
+      .meta { grid-template-columns: 1fr; }
+    }
+
+    .metaValue {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    .raw { margin-top: 16px; }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #020617;
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 16px;
+      border-radius: 18px;
+      color: #cbd5e1;
+      min-height: 74px;
+    }
+
+    .hint {
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 12px;
+    }
+
+    .error {
+      color: #fecaca;
+      background: rgba(239,68,68,.14);
+      border: 1px solid rgba(239,68,68,.35);
+      border-radius: 16px;
+      padding: 12px 14px;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div>
+        <h1>ESP32 BLE Dashboard</h1>
+        <div class="hint">
+          Notify JSON:
+          <code>{"t":503551,"rpmraw":0,"rpmsm":0,"r":77.5,"p":0,"mv":2114,"fw":"1.2.0"}</code>
+        </div>
+      </div>
+      <div class="status">
+        <span id="dot" class="dot"></span>
+        <span id="statusText">Не подключено</span>
+      </div>
+    </header>
+
+    <section class="controls">
+      <button id="connectBtn">Подключиться к ESP32</button>
+      <button id="disconnectBtn" class="danger" disabled>Отключиться</button>
+      <button id="demoBtn" class="secondary">Демо-режим</button>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <div class="label">RPM smooth</div>
+        <div class="value"><span id="rpmsm">—</span><span class="unit">RPM</span></div>
+        <div class="bar"><div id="rpmsmBar" class="fill"></div></div>
+      </article>
+
+      <article class="card">
+        <div class="label">RPM raw</div>
+        <div class="value"><span id="rpmraw">—</span><span class="unit">RPM</span></div>
+        <div class="bar"><div id="rpmrawBar" class="fill"></div></div>
+      </article>
+
+      <article class="card">
+        <div class="label">Регулятор</div>
+        <div class="value"><span id="r">—</span><span class="unit">%</span></div>
+        <div class="bar"><div id="rBar" class="fill"></div></div>
+      </article>
+
+      <article class="card">
+        <div class="label">Мощность</div>
+        <div class="value"><span id="p">—</span><span class="unit">W</span></div>
+        <div class="bar"><div id="pBar" class="fill"></div></div>
+      </article>
+    </section>
+
+    <section class="meta">
+      <article class="card">
+        <div class="label">Время ESP32</div>
+        <div class="metaValue"><span id="t">—</span> s</div>
+      </article>
+
+      <article class="card">
+        <div class="label">Напряжение АЦП</div>
+        <div class="metaValue"><span id="mv">—</span> mV</div>
+      </article>
+
+      <article class="card">
+        <div class="label">Firmware</div>
+        <div class="metaValue"><span id="fw">—</span></div>
+      </article>
+    </section>
+
+    <section class="raw">
+      <div class="card">
+        <div class="label">Последний пакет</div>
+        <pre id="rawData">Пока данных нет</pre>
+        <div id="errorBox" class="error"></div>
+        <p class="small">
+          Перед использованием замени SERVICE_UUID и CHARACTERISTIC_UUID в JavaScript на UUID твоего BLE-сервиса и характеристики Notify.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // TODO: замени на свои UUID из прошивки ESP32.
+    const SERVICE_UUID = "0000a000-0000-1000-8000-00805f9b34fb";
+    const CHARACTERISTIC_UUID = "0000a001-0000-1000-8000-00805f9b34fb";
+
+    let device = null;
+    let characteristic = null;
+    let demoTimer = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    const connectBtn = $("connectBtn");
+    const disconnectBtn = $("disconnectBtn");
+    const demoBtn = $("demoBtn");
+
+    function setStatus(text, ok = false) {
+      $("statusText").textContent = text;
+      $("dot").classList.toggle("ok", ok);
+      disconnectBtn.disabled = !ok;
+    }
+
+    function showError(message) {
+      const box = $("errorBox");
+      box.textContent = message;
+      box.style.display = "block";
+    }
+
+    function clearError() {
+      $("errorBox").style.display = "none";
+      $("errorBox").textContent = "";
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function setNumber(id, value, digits = 0) {
+      const n = Number(value);
+      $(id).textContent = Number.isFinite(n) ? n.toFixed(digits) : "—";
+    }
+
+    function updateDashboard(data) {
+      const rpmraw = Number(data.rpmraw ?? 0);
+      const rpmsm = Number(data.rpmsm ?? 0);
+      const r = Number(data.r ?? 0);
+      const p = Number(data.p ?? 0);
+      const mv = Number(data.mv ?? 0);
+      const t = Number(data.t ?? 0);
+
+      setNumber("rpmraw", rpmraw, 0);
+      setNumber("rpmsm", rpmsm, 0);
+      setNumber("r", r, 1);
+      setNumber("p", p, 0);
+      setNumber("mv", mv, 0);
+
+      $("fw").textContent = data.fw ?? "—";
+      $("t").textContent = Number.isFinite(t) ? (t / 1000).toFixed(1) : "—";
+
+      // Масштабы можно поменять под свою установку.
+      const maxRpm = 3000;
+      const maxPower = 3000;
+
+      $("rpmrawBar").style.width = clamp(rpmraw / maxRpm * 100, 0, 100) + "%";
+      $("rpmsmBar").style.width = clamp(rpmsm / maxRpm * 100, 0, 100) + "%";
+      $("rBar").style.width = clamp(r, 0, 100) + "%";
+      $("pBar").style.width = clamp(p / maxPower * 100, 0, 100) + "%";
+
+      $("rawData").textContent = JSON.stringify(data, null, 2);
+    }
+
+    function parseNotifyValue(dataView) {
+      const decoder = new TextDecoder("utf-8");
+      const bytes = new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
+      const text = decoder.decode(bytes);
+      return JSON.parse(text);
+    }
+
+    function onCharacteristicValueChanged(event) {
+      try {
+        clearError();
+        const data = parseNotifyValue(event.target.value);
+        updateDashboard(data);
+      } catch (err) {
+        showError("Не удалось разобрать JSON из BLE Notify: " + err.message);
+      }
+    }
+
+    async function connectBle() {
+      clearError();
+      stopDemo();
+
+      if (!("bluetooth" in navigator)) {
+        showError("Web Bluetooth недоступен в этом браузере. Попробуй Chrome на Android и HTTPS-страницу.");
+        return;
+      }
+
+      if (SERVICE_UUID.includes("PUT-YOUR") || CHARACTERISTIC_UUID.includes("PUT-YOUR")) {
+        showError("Сначала замени SERVICE_UUID и CHARACTERISTIC_UUID в коде на UUID из прошивки ESP32.");
+        return;
+      }
+
+      try {
+        setStatus("Выбор устройства…", false);
+
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ namePrefix: "ESP32" }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        device.addEventListener("gattserverdisconnected", () => {
+          setStatus("Отключено", false);
+        });
+
+        setStatus("Подключение…", false);
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        characteristic.addEventListener("characteristicvaluechanged", onCharacteristicValueChanged);
+        await characteristic.startNotifications();
+
+        setStatus("Подключено: " + (device.name || "ESP32"), true);
+      } catch (err) {
+        setStatus("Не подключено", false);
+        showError("Ошибка подключения: " + err.message);
+      }
+    }
+
+    function disconnectBle() {
+      stopDemo();
+
+      if (characteristic) {
+        characteristic.removeEventListener("characteristicvaluechanged", onCharacteristicValueChanged);
+      }
+
+      if (device && device.gatt && device.gatt.connected) {
+        device.gatt.disconnect();
+      }
+
+      characteristic = null;
+      device = null;
+      setStatus("Отключено", false);
+    }
+
+    function startDemo() {
+      clearError();
+      disconnectBle();
+
+      let t = 0;
+      setStatus("Демо-режим", true);
+
+      demoTimer = setInterval(() => {
+        t += 250;
+
+        const r = 50 + 45 * Math.sin(t / 2600);
+        const rpmsm = Math.max(0, 300 + r * 22);
+        const rpmraw = Math.max(0, rpmsm + (Math.random() * 240 - 120));
+        const p = Math.max(0, r * 24 + Math.random() * 80);
+        const mv = 1800 + r * 7;
+
+        updateDashboard({
+          t: Math.round(t),
+          rpmraw: Math.round(rpmraw),
+          rpmsm: Math.round(rpmsm),
+          r: Number(r.toFixed(1)),
+          p: Math.round(p),
+          mv: Math.round(mv),
+          fw: "1.2.0"
+        });
+      }, 250);
+    }
+
+    function stopDemo() {
+      if (demoTimer) {
+        clearInterval(demoTimer);
+        demoTimer = null;
+      }
+    }
+
+    connectBtn.addEventListener("click", connectBle);
+    disconnectBtn.addEventListener("click", disconnectBle);
+    demoBtn.addEventListener("click", startDemo);
+
+    updateDashboard({
+      t: 503551,
+      rpmraw: 0,
+      rpmsm: 0,
+      r: 77.5,
+      p: 0,
+      mv: 2114,
+      fw: "1.2.0"
+    });
+  </script>
+</body>
+</html>
