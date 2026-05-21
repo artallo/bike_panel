@@ -403,7 +403,7 @@
         setStatus("Выбор устройства…", false);
 
         device = await navigator.bluetooth.requestDevice({
-          filters: [{ namePrefix: "ESP32" }],
+          filters: [{ namePrefix: "BikeTrainer" }],
           optionalServices: [SERVICE_UUID]
         });
 
